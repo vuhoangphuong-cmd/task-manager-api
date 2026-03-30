@@ -1,0 +1,77 @@
+INFO:     Will watch for changes in these directories: ['/home/thanh_giong/projects/task-manager-api']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [955] using WatchFiles
+INFO:     Started server process [958]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:34476 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44228 - "GET /api/v1/dashboard/my-work/32c822bd-f49c-455e-b75a-3a525fc4c6e6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44228 - "GET /api/v1/dashboard/my-work/32c822bd-f49c-455e-b75a-3a525fc4c6e6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35690 - "GET /api/v1/dashboard/my-work/32c822bd-f49c-455e-b75a-3a525fc4c6e6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35690 - "GET /api/v1/dashboard/my-work/32c822bd-f49c-455e-b75a-3a525fc4c6e6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43438 - "OPTIONS /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43438 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43438 - "GET /api/v1/dashboard/my-work/32c822bd-f49c-455e-b75a-3a525fc4c6e6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43446 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43446 - "GET /api/v1/dashboard/my-work/46c7905c-a66c-4178-8480-23c38bd1efca HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49838 - "GET /api/v1/dashboard/my-work/46c7905c-a66c-4178-8480-23c38bd1efca HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49838 - "GET /api/v1/dashboard/my-work/46c7905c-a66c-4178-8480-23c38bd1efca HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40210 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40210 - "GET /api/v1/dashboard/my-work/a81a89ae-40e3-4c5b-8380-c94a6d41e787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46632 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46632 - "GET /api/v1/dashboard/my-work/32c822bd-f49c-455e-b75a-3a525fc4c6e6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57742 - "GET /api/v1/dashboard/my-work/32c822bd-f49c-455e-b75a-3a525fc4c6e6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57746 - "GET /api/v1/users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57746 - "GET /api/v1/users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57746 - "GET /api/v1/users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57742 - "GET /api/v1/dashboard/my-work/32c822bd-f49c-455e-b75a-3a525fc4c6e6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57742 - "GET /api/v1/dashboard/my-work/32c822bd-f49c-455e-b75a-3a525fc4c6e6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44310 - "OPTIONS /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44310 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44310 - "GET /api/v1/dashboard/my-work/46c7905c-a66c-4178-8480-23c38bd1efca HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44324 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44324 - "GET /api/v1/dashboard/my-work/a81a89ae-40e3-4c5b-8380-c94a6d41e787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44324 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44324 - "GET /api/v1/dashboard/my-work/32c822bd-f49c-455e-b75a-3a525fc4c6e6 HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'app/ws_manager.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [958]
+INFO:     Started server process [1709]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1709]
+INFO:     Started server process [1715]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1715]
+INFO:     Started server process [1724]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/api/tasks.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1724]
+INFO:     Started server process [1730]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:41948 - "WebSocket /ws/tasks" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:41936 - "GET /api/v1/users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41934 - "GET /api/v1/dashboard/my-work/32c822bd-f49c-455e-b75a-3a525fc4c6e6 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     connection closed
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1730]
+INFO:     Stopping reloader process [955]
