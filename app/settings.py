@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     app_name: str = "Task Manager API"
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/task_manager"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    secret_key: str = "CHANGE_ME_IN_PRODUCTION"
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60 * 8
 
     model_config = SettingsConfigDict(
         env_file=".env",

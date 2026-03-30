@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 
 class TaskCreate(BaseModel):
@@ -52,3 +52,20 @@ class HistoryOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class UserOut(BaseModel):
+    id: int
+    username: str
+    full_name: str
+    email: EmailStr
+    role: Literal["manager", "staff"]
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: UserOut

@@ -3,16 +3,29 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from app.db import Base, engine, get_db
-from app.models import Task, TaskHistory
-from app.schemas import AISuggestIn, HistoryOut, StatusUpdate, TaskCreate, TaskOut, TaskUpdate
+from app.models import Task, TaskHistory, User
+from app.schemas import (
+    AISuggestIn,
+    HistoryOut,
+    StatusUpdate,
+    TaskCreate,
+    TaskOut,
+    TaskUpdate,
+    TokenResponse,
+    UserOut,
+)
+from app.security import create_access_token, decode_access_token, verify_password
 from app.settings import get_settings
 
 settings = get_settings()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
 
 def now_utc() -> datetime:
@@ -80,23 +93,140 @@ def get_task_or_404(db: Session, task_id: int) -> Task:
     return task
 
 
+def authenticate_user(db: Session, username: str, password: str) -> User | None:
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        return None
+    if not verify_password(password, user.hashed_password):
+        return None
+    return user
+
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Không xác thực được người dùng",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = decode_access_token(token)
+        username = payload.get("sub")
+        if not username:
+            raise credentials_exception
+    except Exception:
+        raise credentials_exception
+
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise credentials_exception
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Tài khoản đã bị vô hiệu hóa")
+    return user
+
+
+def is_manager(user: User) -> bool:
+    return user.role == "manager"
+
+
+def matches_task_assignee(user: User, task: Task) -> bool:
+    assignee = (task.assignee or "").strip().lower()
+    candidates = {
+        (user.username or "").strip().lower(),
+        (user.email or "").strip().lower(),
+        (user.full_name or "").strip().lower(),
+    }
+    return assignee in candidates
+
+
+def require_task_access(user: User, task: Task) -> None:
+    if is_manager(user):
+        return
+    if not matches_task_assignee(user, task):
+        raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập công việc này")
+
+
+def require_manager(user: User) -> None:
+    if not is_manager(user):
+        raise HTTPException(status_code=403, detail="Chỉ manager được phép thực hiện thao tác này")
+
+
+def normalized_staff_assignee(user: User) -> str:
+    return (user.full_name or user.email or user.username or "").strip()
+
+
 @app.get("/health")
 def health(db: Session = Depends(get_db)) -> dict:
-    db.execute("SELECT 1")
+    db.execute(text("SELECT 1"))
     return {"status": "ok"}
 
 
+@app.post("/auth/token", response_model=TokenResponse)
+def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sai username hoặc password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    access_token = create_access_token(subject=user.username)
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=user,
+    )
+
+
+@app.get("/auth/me", response_model=UserOut)
+def read_me(current_user: User = Depends(get_current_user)) -> UserOut:
+    return current_user
+
+
 @app.get("/tasks", response_model=List[TaskOut])
-def list_tasks(db: Session = Depends(get_db)) -> List[Task]:
-    return db.query(Task).order_by(Task.id.asc()).all()
+def list_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> List[Task]:
+    if is_manager(current_user):
+        return db.query(Task).order_by(Task.id.asc()).all()
+
+    candidates = [
+        current_user.username.strip(),
+        current_user.email.strip(),
+        (current_user.full_name or "").strip(),
+    ]
+    candidates = [x for x in candidates if x]
+
+    return (
+        db.query(Task)
+        .filter(or_(*[Task.assignee == value for value in candidates]))
+        .order_by(Task.id.asc())
+        .all()
+    )
 
 
 @app.post("/tasks", response_model=TaskOut)
-async def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> Task:
+async def create_task(
+    payload: TaskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Task:
+    assignee = payload.assignee
+    if not is_manager(current_user):
+        assignee = normalized_staff_assignee(current_user)
+
     task = Task(
         title=payload.title,
         description=payload.description,
-        assignee=payload.assignee,
+        assignee=assignee,
         priority=payload.priority,
         due_date=payload.due_date,
         status=payload.status,
@@ -127,21 +257,37 @@ async def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> Tas
 
 
 @app.get("/tasks/{task_id}", response_model=TaskOut)
-def get_task(task_id: int, db: Session = Depends(get_db)) -> Task:
-    return get_task_or_404(db, task_id)
+def get_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Task:
+    task = get_task_or_404(db, task_id)
+    require_task_access(current_user, task)
+    return task
 
 
 @app.put("/tasks/{task_id}", response_model=TaskOut)
-async def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)) -> Task:
+async def update_task(
+    task_id: int,
+    payload: TaskUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Task:
     task = get_task_or_404(db, task_id)
+    require_task_access(current_user, task)
 
     task.title = payload.title
     task.description = payload.description
-    task.assignee = payload.assignee
     task.priority = payload.priority
     task.due_date = payload.due_date
     task.status = payload.status
     task.updated_at = now_utc()
+
+    if is_manager(current_user):
+        task.assignee = payload.assignee
+    else:
+        task.assignee = normalized_staff_assignee(current_user)
 
     db.commit()
     db.refresh(task)
@@ -166,10 +312,16 @@ async def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(g
 
 
 @app.patch("/tasks/{task_id}/status", response_model=TaskOut)
-async def update_task_status(task_id: int, payload: StatusUpdate, db: Session = Depends(get_db)) -> Task:
+async def update_task_status(
+    task_id: int,
+    payload: StatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Task:
     task = get_task_or_404(db, task_id)
-    old_status = task.status
+    require_task_access(current_user, task)
 
+    old_status = task.status
     task.status = payload.status
     task.updated_at = now_utc()
 
@@ -197,7 +349,13 @@ async def update_task_status(task_id: int, payload: StatusUpdate, db: Session = 
 
 
 @app.delete("/tasks/{task_id}")
-async def delete_task(task_id: int, db: Session = Depends(get_db)) -> dict:
+async def delete_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    require_manager(current_user)
+
     task = get_task_or_404(db, task_id)
     title = task.title
 
@@ -217,8 +375,14 @@ async def delete_task(task_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @app.get("/tasks/{task_id}/history", response_model=List[HistoryOut])
-def get_task_history(task_id: int, db: Session = Depends(get_db)) -> List[TaskHistory]:
-    get_task_or_404(db, task_id)
+def get_task_history(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> List[TaskHistory]:
+    task = get_task_or_404(db, task_id)
+    require_task_access(current_user, task)
+
     return (
         db.query(TaskHistory)
         .filter(TaskHistory.task_id == task_id)
@@ -228,8 +392,13 @@ def get_task_history(task_id: int, db: Session = Depends(get_db)) -> List[TaskHi
 
 
 @app.post("/ai/suggest")
-def ai_suggest(payload: AISuggestIn, db: Session = Depends(get_db)) -> dict:
+def ai_suggest(
+    payload: AISuggestIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     task = get_task_or_404(db, payload.task_id)
+    require_task_access(current_user, task)
 
     suggestions = [
         "Rà soát lại mô tả công việc để cụ thể hóa đầu ra cần bàn giao.",
