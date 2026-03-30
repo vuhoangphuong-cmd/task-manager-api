@@ -173,6 +173,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email đã được đăng ký")
 
     user = User(
+        username=payload.email,
         full_name=payload.full_name,
         email=payload.email,
         role=payload.role,
