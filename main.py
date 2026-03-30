@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import traceback
 from typing import List
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
@@ -9,7 +10,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
-from app.db import Base, engine, get_db
+from app.db import get_db
 from app.models import Task, TaskHistory, User
 from app.schemas import (
     AISuggestIn,
@@ -18,7 +19,6 @@ from app.schemas import (
     TaskCreate,
     TaskOut,
     TaskUpdate,
-    TokenResponse,
     UserOut,
 )
 from app.security import create_access_token, decode_access_token, verify_password
@@ -56,7 +56,6 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
-
 app = FastAPI(title=settings.app_name)
 
 app.add_middleware(
@@ -66,11 +65,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    Base.metadata.create_all(bind=engine)
 
 
 def add_history(db: Session, task_id: int, action: str, detail: str) -> TaskHistory:
@@ -164,25 +158,42 @@ def health(db: Session = Depends(get_db)) -> dict:
     return {"status": "ok"}
 
 
-@app.post("/auth/token", response_model=TokenResponse)
+@app.post("/auth/token")
 def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
-) -> TokenResponse:
-    user = authenticate_user(db, form_data.username, form_data.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sai username hoặc password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+):
+    try:
+        user = authenticate_user(db, form_data.username, form_data.password)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Sai username hoặc password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
-    access_token = create_access_token(subject=user.username)
-    return TokenResponse(
-        access_token=access_token,
-        token_type="bearer",
-        user=user,
-    )
+        access_token = create_access_token(subject=user.username)
+
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "full_name": user.full_name,
+                "email": user.email,
+                "role": user.role,
+                "is_active": user.is_active,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        return {
+            "debug_error_type": e.__class__.__name__,
+            "debug_error": str(e),
+        }
 
 
 @app.get("/auth/me", response_model=UserOut)
