@@ -4,6 +4,18 @@ from typing import Literal, Optional
 from pydantic import BaseModel, EmailStr
 
 
+class RegisterIn(BaseModel):
+    full_name: str
+    email: EmailStr
+    role: Literal["truong_phong", "pho_truong_phong", "chuyen_vien"]
+    password: str
+
+
+class LoginEmailIn(BaseModel):
+    email: EmailStr
+    password: str
+
+
 class TaskCreate(BaseModel):
     title: str
     description: str = ""
@@ -56,10 +68,9 @@ class HistoryOut(BaseModel):
 
 class UserOut(BaseModel):
     id: int
-    username: str
     full_name: str
     email: EmailStr
-    role: Literal["manager", "staff"]
+    role: Literal["truong_phong", "pho_truong_phong", "chuyen_vien"]
     is_active: bool
 
     model_config = {"from_attributes": True}
