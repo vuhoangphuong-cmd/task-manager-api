@@ -1,63 +1,22 @@
 from __future__ import annotations
 
-import json
-import os
 from datetime import datetime
-from pathlib import Path
-from typing import List, Optional, Literal
+from typing import List
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-BASE_DIR = Path(__file__).resolve().parent
-DATA_FILE = BASE_DIR / "tasks_data.json"
+from app.db import Base, engine, get_db
+from app.models import Task, TaskHistory
+from app.schemas import AISuggestIn, HistoryOut, StatusUpdate, TaskCreate, TaskOut, TaskUpdate
+from app.settings import get_settings
 
-
-def now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
-
-
-def load_db() -> dict:
-    if not DATA_FILE.exists():
-        return {"tasks": [], "history": [], "next_task_id": 1, "next_history_id": 1}
-    try:
-        return json.loads(DATA_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {"tasks": [], "history": [], "next_task_id": 1, "next_history_id": 1}
+settings = get_settings()
 
 
-def save_db(db: dict) -> None:
-    DATA_FILE.write_text(json.dumps(db, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-db = load_db()
-
-
-class TaskCreate(BaseModel):
-    title: str
-    description: str = ""
-    assignee: str = ""
-    priority: Literal["low", "medium", "high"] = "medium"
-    due_date: Optional[str] = None
-    status: Literal["todo", "in_progress", "done"] = "todo"
-
-
-class TaskUpdate(BaseModel):
-    title: str
-    description: str = ""
-    assignee: str = ""
-    priority: Literal["low", "medium", "high"] = "medium"
-    due_date: Optional[str] = None
-    status: Literal["todo", "in_progress", "done"] = "todo"
-
-
-class StatusUpdate(BaseModel):
-    status: Literal["todo", "in_progress", "done"]
-
-
-class AISuggestIn(BaseModel):
-    task_id: int
+def now_utc() -> datetime:
+    return datetime.utcnow()
 
 
 class ConnectionManager:
@@ -85,136 +44,140 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-app = FastAPI(title="Task Manager API")
-
-CORS_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173",
-    ).split(",")
-    if origin.strip()
-]
+app = FastAPI(title=settings.app_name)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-def add_history(task_id: int, action: str, detail: str) -> None:
-    history_item = {
-        "id": db["next_history_id"],
-        "task_id": task_id,
-        "action": action,
-        "detail": detail,
-        "created_at": now_iso(),
-    }
-    db["next_history_id"] += 1
-    db["history"].append(history_item)
-    save_db(db)
+@app.on_event("startup")
+def on_startup() -> None:
+    Base.metadata.create_all(bind=engine)
 
 
-def get_task_or_404(task_id: int) -> dict:
-    for task in db["tasks"]:
-        if task["id"] == task_id:
-            return task
-    raise HTTPException(status_code=404, detail="Task not found")
+def add_history(db: Session, task_id: int, action: str, detail: str) -> TaskHistory:
+    history_item = TaskHistory(
+        task_id=task_id,
+        action=action,
+        detail=detail,
+        created_at=now_utc(),
+    )
+    db.add(history_item)
+    db.commit()
+    db.refresh(history_item)
+    return history_item
+
+
+def get_task_or_404(db: Session, task_id: int) -> Task:
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
 
 @app.get("/health")
-def health() -> dict:
+def health(db: Session = Depends(get_db)) -> dict:
+    db.execute("SELECT 1")
     return {"status": "ok"}
 
 
-@app.get("/tasks")
-def list_tasks() -> List[dict]:
-    return db["tasks"]
+@app.get("/tasks", response_model=List[TaskOut])
+def list_tasks(db: Session = Depends(get_db)) -> List[Task]:
+    return db.query(Task).order_by(Task.id.asc()).all()
 
 
-@app.post("/tasks")
-async def create_task(payload: TaskCreate) -> dict:
-    task = {
-        "id": db["next_task_id"],
-        "title": payload.title,
-        "description": payload.description,
-        "assignee": payload.assignee,
-        "priority": payload.priority,
-        "due_date": payload.due_date,
-        "status": payload.status,
-        "created_at": now_iso(),
-        "updated_at": now_iso(),
-    }
-    db["next_task_id"] += 1
-    db["tasks"].append(task)
-    save_db(db)
+@app.post("/tasks", response_model=TaskOut)
+async def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> Task:
+    task = Task(
+        title=payload.title,
+        description=payload.description,
+        assignee=payload.assignee,
+        priority=payload.priority,
+        due_date=payload.due_date,
+        status=payload.status,
+        created_at=now_utc(),
+        updated_at=now_utc(),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
 
     add_history(
-        task["id"],
+        db,
+        task.id,
         "Tạo công việc",
-        f'Tạo công việc "{task["title"]}" với trạng thái {task["status"]}',
+        f'Tạo công việc "{task.title}" với trạng thái {task.status}',
     )
 
     await manager.broadcast_json(
         {
             "type": "task_created",
-            "task_id": task["id"],
-            "title": task["title"],
-            "timestamp": now_iso(),
+            "task_id": task.id,
+            "title": task.title,
+            "timestamp": now_utc().isoformat(timespec="seconds"),
         }
     )
 
     return task
 
 
-@app.get("/tasks/{task_id}")
-def get_task(task_id: int) -> dict:
-    return get_task_or_404(task_id)
+@app.get("/tasks/{task_id}", response_model=TaskOut)
+def get_task(task_id: int, db: Session = Depends(get_db)) -> Task:
+    return get_task_or_404(db, task_id)
 
 
-@app.put("/tasks/{task_id}")
-async def update_task(task_id: int, payload: TaskUpdate) -> dict:
-    task = get_task_or_404(task_id)
+@app.put("/tasks/{task_id}", response_model=TaskOut)
+async def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)) -> Task:
+    task = get_task_or_404(db, task_id)
 
-    task["title"] = payload.title
-    task["description"] = payload.description
-    task["assignee"] = payload.assignee
-    task["priority"] = payload.priority
-    task["due_date"] = payload.due_date
-    task["status"] = payload.status
-    task["updated_at"] = now_iso()
-    save_db(db)
+    task.title = payload.title
+    task.description = payload.description
+    task.assignee = payload.assignee
+    task.priority = payload.priority
+    task.due_date = payload.due_date
+    task.status = payload.status
+    task.updated_at = now_utc()
+
+    db.commit()
+    db.refresh(task)
 
     add_history(
+        db,
         task_id,
         "Cập nhật công việc",
-        f'Cập nhật công việc "{task["title"]}"',
+        f'Cập nhật công việc "{task.title}"',
     )
 
     await manager.broadcast_json(
         {
             "type": "task_updated",
             "task_id": task_id,
-            "title": task["title"],
-            "timestamp": now_iso(),
+            "title": task.title,
+            "timestamp": now_utc().isoformat(timespec="seconds"),
         }
     )
 
     return task
 
 
-@app.patch("/tasks/{task_id}/status")
-async def update_task_status(task_id: int, payload: StatusUpdate) -> dict:
-    task = get_task_or_404(task_id)
-    old_status = task["status"]
-    task["status"] = payload.status
-    task["updated_at"] = now_iso()
-    save_db(db)
+@app.patch("/tasks/{task_id}/status", response_model=TaskOut)
+async def update_task_status(task_id: int, payload: StatusUpdate, db: Session = Depends(get_db)) -> Task:
+    task = get_task_or_404(db, task_id)
+    old_status = task.status
+
+    task.status = payload.status
+    task.updated_at = now_utc()
+
+    db.commit()
+    db.refresh(task)
 
     add_history(
+        db,
         task_id,
         "Cập nhật trạng thái",
         f'Trạng thái từ "{old_status}" sang "{payload.status}"',
@@ -224,9 +187,9 @@ async def update_task_status(task_id: int, payload: StatusUpdate) -> dict:
         {
             "type": "task_status_updated",
             "task_id": task_id,
-            "title": task["title"],
+            "title": task.title,
             "status": payload.status,
-            "timestamp": now_iso(),
+            "timestamp": now_utc().isoformat(timespec="seconds"),
         }
     )
 
@@ -234,33 +197,39 @@ async def update_task_status(task_id: int, payload: StatusUpdate) -> dict:
 
 
 @app.delete("/tasks/{task_id}")
-async def delete_task(task_id: int) -> dict:
-    task = get_task_or_404(task_id)
-    db["tasks"] = [t for t in db["tasks"] if t["id"] != task_id]
-    db["history"] = [h for h in db["history"] if h["task_id"] != task_id]
-    save_db(db)
+async def delete_task(task_id: int, db: Session = Depends(get_db)) -> dict:
+    task = get_task_or_404(db, task_id)
+    title = task.title
+
+    db.delete(task)
+    db.commit()
 
     await manager.broadcast_json(
         {
             "type": "task_deleted",
             "task_id": task_id,
-            "title": task["title"],
-            "timestamp": now_iso(),
+            "title": title,
+            "timestamp": now_utc().isoformat(timespec="seconds"),
         }
     )
 
     return {"ok": True}
 
 
-@app.get("/tasks/{task_id}/history")
-def get_task_history(task_id: int) -> List[dict]:
-    get_task_or_404(task_id)
-    return [h for h in db["history"] if h["task_id"] == task_id]
+@app.get("/tasks/{task_id}/history", response_model=List[HistoryOut])
+def get_task_history(task_id: int, db: Session = Depends(get_db)) -> List[TaskHistory]:
+    get_task_or_404(db, task_id)
+    return (
+        db.query(TaskHistory)
+        .filter(TaskHistory.task_id == task_id)
+        .order_by(TaskHistory.id.asc())
+        .all()
+    )
 
 
 @app.post("/ai/suggest")
-def ai_suggest(payload: AISuggestIn) -> dict:
-    task = get_task_or_404(payload.task_id)
+def ai_suggest(payload: AISuggestIn, db: Session = Depends(get_db)) -> dict:
+    task = get_task_or_404(db, payload.task_id)
 
     suggestions = [
         "Rà soát lại mô tả công việc để cụ thể hóa đầu ra cần bàn giao.",
@@ -268,9 +237,9 @@ def ai_suggest(payload: AISuggestIn) -> dict:
         "Xác nhận người phụ trách và người giao việc để tránh chồng chéo.",
     ]
 
-    if task["status"] == "todo":
+    if task.status == "todo":
         summary = "AI gợi ý: Công việc đang ở trạng thái chưa thực hiện, nên làm rõ mục tiêu và kế hoạch triển khai."
-    elif task["status"] == "in_progress":
+    elif task.status == "in_progress":
         summary = "AI gợi ý: Công việc đang được triển khai, nên cập nhật tiến độ và các vướng mắc chính."
     else:
         summary = "AI gợi ý: Công việc đã hoàn thành, nên chuẩn hóa nội dung bàn giao và tổng kết kết quả."
