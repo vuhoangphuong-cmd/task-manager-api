@@ -124,39 +124,16 @@ def get_current_user(
 
 
 def is_manager(user: User) -> bool:
-    return user.role in {"truong_phong", "pho_truong_phong", "manager"}
-
-
-def build_user_assignee_candidates(user: User) -> list[str]:
-    values = []
-
-    for item in [
-        user.email,
-        user.full_name,
-        getattr(user, "username", None),
-    ]:
-        if item:
-            v = item.strip()
-            if v and v not in values:
-                values.append(v)
-
-    return values
+    return user.role in {"truong_phong", "pho_truong_phong"}
 
 
 def matches_task_assignee(user: User, task: Task) -> bool:
     assignee = (task.assignee or "").strip().lower()
-    if not assignee:
-        return False
-
-    candidates = [x.lower() for x in build_user_assignee_candidates(user)]
-
-    for value in candidates:
-        if assignee == value:
-            return True
-        if value in assignee:
-            return True
-
-    return False
+    candidates = {
+        (user.email or "").strip().lower(),
+        (user.full_name or "").strip().lower(),
+    }
+    return assignee in candidates
 
 
 def require_task_access(user: User, task: Task) -> None:
@@ -172,7 +149,7 @@ def require_manager(user: User) -> None:
 
 
 def normalized_staff_assignee(user: User) -> str:
-    return (user.email or user.full_name or "").strip()
+    return (user.full_name or user.email or "").strip()
 
 
 @app.get("/health")
@@ -252,31 +229,6 @@ def read_me(current_user: User = Depends(get_current_user)) -> UserOut:
     return current_user
 
 
-@app.get("/users")
-def list_users(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    require_manager(current_user)
-
-    users = (
-        db.query(User)
-        .filter(User.is_active == True)
-        .order_by(User.full_name.asc(), User.email.asc())
-        .all()
-    )
-
-    return [
-        {
-            "id": u.id,
-            "full_name": u.full_name,
-            "email": u.email,
-            "role": u.role,
-        }
-        for u in users
-    ]
-
-
 @app.get("/tasks", response_model=List[TaskOut])
 def list_tasks(
     db: Session = Depends(get_db),
@@ -285,19 +237,15 @@ def list_tasks(
     if is_manager(current_user):
         return db.query(Task).order_by(Task.id.asc()).all()
 
-    candidates = build_user_assignee_candidates(current_user)
-
-    conditions = []
-    for value in candidates:
-        conditions.append(Task.assignee == value)
-        conditions.append(Task.assignee.ilike(f"%{value}%"))
-
-    if not conditions:
-        return []
+    candidates = [
+        current_user.email.strip(),
+        (current_user.full_name or "").strip(),
+    ]
+    candidates = [x for x in candidates if x]
 
     return (
         db.query(Task)
-        .filter(or_(*conditions))
+        .filter(or_(*[Task.assignee == value for value in candidates]))
         .order_by(Task.id.asc())
         .all()
     )
@@ -309,8 +257,7 @@ async def create_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Task:
-    assignee = (payload.assignee or "").strip()
-
+    assignee = payload.assignee
     if not is_manager(current_user):
         assignee = normalized_staff_assignee(current_user)
 
@@ -376,7 +323,7 @@ async def update_task(
     task.updated_at = now_utc()
 
     if is_manager(current_user):
-        task.assignee = (payload.assignee or "").strip()
+        task.assignee = payload.assignee
     else:
         task.assignee = normalized_staff_assignee(current_user)
 
