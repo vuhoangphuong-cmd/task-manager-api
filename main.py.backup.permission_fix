@@ -123,22 +123,24 @@ def get_current_user(
     return user
 
 
-def is_leadership(user: User) -> bool:
+def is_manager(user: User) -> bool:
     return user.role in {"truong_phong", "pho_truong_phong", "manager"}
 
 
 def build_user_assignee_candidates(user: User) -> list[str]:
-    candidates = []
-    for value in [
-        getattr(user, "email", None),
-        getattr(user, "full_name", None),
+    values = []
+
+    for item in [
+        user.email,
+        user.full_name,
         getattr(user, "username", None),
     ]:
-        if value:
-            v = value.strip()
-            if v and v not in candidates:
-                candidates.append(v)
-    return candidates
+        if item:
+            v = item.strip()
+            if v and v not in values:
+                values.append(v)
+
+    return values
 
 
 def matches_task_assignee(user: User, task: Task) -> bool:
@@ -146,29 +148,30 @@ def matches_task_assignee(user: User, task: Task) -> bool:
     if not assignee:
         return False
 
-    for value in build_user_assignee_candidates(user):
-        v = value.lower()
-        if assignee == v:
+    candidates = [x.lower() for x in build_user_assignee_candidates(user)]
+
+    for value in candidates:
+        if assignee == value:
             return True
-        if v in assignee:
+        if value in assignee:
             return True
 
     return False
 
 
 def require_task_access(user: User, task: Task) -> None:
-    if is_leadership(user):
+    if is_manager(user):
         return
     if not matches_task_assignee(user, task):
         raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập công việc này")
 
 
-def require_leadership(user: User) -> None:
-    if not is_leadership(user):
+def require_manager(user: User) -> None:
+    if not is_manager(user):
         raise HTTPException(status_code=403, detail="Chỉ trưởng/phó phòng được phép thực hiện thao tác này")
 
 
-def normalized_self_assignee(user: User) -> str:
+def normalized_staff_assignee(user: User) -> str:
     return (user.email or user.full_name or "").strip()
 
 
@@ -254,7 +257,7 @@ def list_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_leadership(current_user)
+    require_manager(current_user)
 
     users = (
         db.query(User)
@@ -279,21 +282,22 @@ def list_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> List[Task]:
-    if is_leadership(current_user):
+    if is_manager(current_user):
         return db.query(Task).order_by(Task.id.asc()).all()
 
     candidates = build_user_assignee_candidates(current_user)
-    if not candidates:
-        return []
 
-    filters = []
+    conditions = []
     for value in candidates:
-        filters.append(Task.assignee == value)
-        filters.append(Task.assignee.ilike(f"%{value}%"))
+        conditions.append(Task.assignee == value)
+        conditions.append(Task.assignee.ilike(f"%{value}%"))
+
+    if not conditions:
+        return []
 
     return (
         db.query(Task)
-        .filter(or_(*filters))
+        .filter(or_(*conditions))
         .order_by(Task.id.asc())
         .all()
     )
@@ -307,8 +311,8 @@ async def create_task(
 ) -> Task:
     assignee = (payload.assignee or "").strip()
 
-    if not is_leadership(current_user):
-        assignee = normalized_self_assignee(current_user)
+    if not is_manager(current_user):
+        assignee = normalized_staff_assignee(current_user)
 
     task = Task(
         title=payload.title,
@@ -371,10 +375,10 @@ async def update_task(
     task.status = payload.status
     task.updated_at = now_utc()
 
-    if is_leadership(current_user):
+    if is_manager(current_user):
         task.assignee = (payload.assignee or "").strip()
     else:
-        task.assignee = normalized_self_assignee(current_user)
+        task.assignee = normalized_staff_assignee(current_user)
 
     db.commit()
     db.refresh(task)
@@ -441,7 +445,7 @@ async def delete_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    require_leadership(current_user)
+    require_manager(current_user)
 
     task = get_task_or_404(db, task_id)
     title = task.title
