@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import List
 
@@ -32,28 +31,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login-email")
 
 def now_utc() -> datetime:
     return datetime.utcnow()
-
-
-def safe_json_loads(value: str):
-    try:
-        return json.loads(value or "[]")
-    except Exception:
-        return []
-
-
-def task_to_dict(task: Task) -> dict:
-    return {
-        "id": task.id,
-        "title": task.title,
-        "description": task.description,
-        "assignee": task.assignee,
-        "priority": task.priority,
-        "due_date": task.due_date,
-        "status": task.status,
-        "attachments": safe_json_loads(task.attachments_json),
-        "created_at": task.created_at,
-        "updated_at": task.updated_at,
-    }
 
 
 class ConnectionManager:
@@ -195,58 +172,6 @@ def normalized_self_assignee(user: User) -> str:
     return (user.email or user.full_name or "").strip()
 
 
-def build_ai_suggestion(task: Task, current_user: User) -> dict:
-    title = (task.title or "").strip()
-    description = (task.description or "").strip()
-    priority = (task.priority or "").strip()
-    status_value = (task.status or "").strip()
-    due_date = (task.due_date or "").strip()
-    assignee = (task.assignee or "").strip()
-
-    suggestions = []
-
-    if priority == "high":
-        suggestions.append("Công việc đang có mức ưu tiên cao, nên tách ngay 2–3 đầu việc nhỏ và cập nhật tiến độ hàng ngày.")
-    elif priority == "medium":
-        suggestions.append("Nên chia công việc thành các mốc trung gian ngắn để tránh dồn việc vào sát hạn.")
-    else:
-        suggestions.append("Có thể gom công việc này vào một đợt xử lý định kỳ nếu chưa cần ưu tiên ngay.")
-
-    if status_value == "todo":
-        suggestions.append("Bước tiếp theo nên là xác định rõ đầu ra, dữ liệu cần thu thập và người phối hợp chính.")
-    elif status_value == "in_progress":
-        suggestions.append("Nên cập nhật ngắn gọn phần đã làm, phần còn tồn đọng và trở ngại hiện tại ngay trong mô tả báo cáo.")
-    else:
-        suggestions.append("Khi đã hoàn thành, nên bổ sung kết quả cuối cùng, tài liệu bàn giao và bằng chứng hoàn thành.")
-
-    if due_date:
-        suggestions.append(f"Hạn hoàn thành hiện đặt là {due_date}. Nên kiểm tra lại xem còn thiếu minh chứng nào trước khi chốt công việc.")
-    else:
-        suggestions.append("Công việc chưa có hạn hoàn thành, nên bổ sung deadline để thuận tiện theo dõi và nhắc việc.")
-
-    if title:
-        suggestions.append(f'Gợi ý cho riêng công việc "{title}": mô tả nên nêu rõ mục tiêu, kết quả đầu ra và người nhận bàn giao.')
-    if description:
-        suggestions.append("Mô tả hiện đã có nội dung, nên thêm 1–2 dòng báo cáo kết quả hoặc vướng mắc để lãnh đạo theo dõi sát hơn.")
-    else:
-        suggestions.append("Mô tả đang còn trống hoặc quá ngắn, nên bổ sung nội dung công việc và tình trạng triển khai thực tế.")
-
-    if not is_leadership(current_user):
-        suggestions.append(f'Bạn đang là người được giao ({assignee}), nên ưu tiên cập nhật báo cáo thực hiện ngay trong phần mô tả trước khi đổi trạng thái.')
-    else:
-        suggestions.append("Bạn đang ở vai trò lãnh đạo, nên kiểm tra tiến độ, minh chứng đính kèm và chất lượng báo cáo trước khi duyệt kết quả.")
-
-    summary = (
-        f'Công việc "{title}" hiện ở trạng thái "{status_value}", ưu tiên "{priority}". '
-        f'AI gợi ý tập trung vào việc cập nhật báo cáo đúng tiến độ, làm rõ đầu ra và đính kèm minh chứng phù hợp.'
-    )
-
-    return {
-        "summary": summary,
-        "suggestions": suggestions[:6],
-    }
-
-
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -353,10 +278,9 @@ def list_users(
 def list_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> List[Task]:
     if is_leadership(current_user):
-        tasks = db.query(Task).order_by(Task.id.asc()).all()
-        return [task_to_dict(t) for t in tasks]
+        return db.query(Task).order_by(Task.id.asc()).all()
 
     candidates = build_user_assignee_candidates(current_user)
     if not candidates:
@@ -367,13 +291,12 @@ def list_tasks(
         filters.append(Task.assignee == value)
         filters.append(Task.assignee.ilike(f"%{value}%"))
 
-    tasks = (
+    return (
         db.query(Task)
         .filter(or_(*filters))
         .order_by(Task.id.asc())
         .all()
     )
-    return [task_to_dict(t) for t in tasks]
 
 
 @app.post("/tasks", response_model=TaskOut)
@@ -381,7 +304,7 @@ async def create_task(
     payload: TaskCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Task:
     assignee = (payload.assignee or "").strip()
 
     if not is_leadership(current_user):
@@ -394,7 +317,6 @@ async def create_task(
         priority=payload.priority,
         due_date=payload.due_date,
         status=payload.status,
-        attachments_json=json.dumps([a.model_dump() for a in payload.attachments], ensure_ascii=False),
         created_at=now_utc(),
         updated_at=now_utc(),
     )
@@ -418,7 +340,7 @@ async def create_task(
         }
     )
 
-    return task_to_dict(task)
+    return task
 
 
 @app.get("/tasks/{task_id}", response_model=TaskOut)
@@ -426,10 +348,10 @@ def get_task(
     task_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Task:
     task = get_task_or_404(db, task_id)
     require_task_access(current_user, task)
-    return task_to_dict(task)
+    return task
 
 
 @app.put("/tasks/{task_id}", response_model=TaskOut)
@@ -438,7 +360,7 @@ async def update_task(
     payload: TaskUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Task:
     task = get_task_or_404(db, task_id)
     require_task_access(current_user, task)
 
@@ -448,7 +370,6 @@ async def update_task(
     task.due_date = payload.due_date
     task.status = payload.status
     task.updated_at = now_utc()
-    task.attachments_json = json.dumps([a.model_dump() for a in payload.attachments], ensure_ascii=False)
 
     if is_leadership(current_user):
         task.assignee = (payload.assignee or "").strip()
@@ -462,7 +383,7 @@ async def update_task(
         db,
         task_id,
         "Cập nhật công việc",
-        f'Cập nhật công việc "{task.title}" - trạng thái mới: {task.status}',
+        f'Cập nhật công việc "{task.title}"',
     )
 
     await manager.broadcast_json(
@@ -470,12 +391,11 @@ async def update_task(
             "type": "task_updated",
             "task_id": task_id,
             "title": task.title,
-            "status": task.status,
             "timestamp": now_utc().isoformat(timespec="seconds"),
         }
     )
 
-    return task_to_dict(task)
+    return task
 
 
 @app.patch("/tasks/{task_id}/status", response_model=TaskOut)
@@ -484,7 +404,7 @@ async def update_task_status(
     payload: StatusUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Task:
     task = get_task_or_404(db, task_id)
     require_task_access(current_user, task)
 
@@ -512,7 +432,7 @@ async def update_task_status(
         }
     )
 
-    return task_to_dict(task)
+    return task
 
 
 @app.delete("/tasks/{task_id}")
@@ -520,7 +440,7 @@ async def delete_task(
     task_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> dict:
     require_leadership(current_user)
 
     task = get_task_or_404(db, task_id)
@@ -546,27 +466,16 @@ def get_task_history(
     task_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> List[TaskHistory]:
     task = get_task_or_404(db, task_id)
     require_task_access(current_user, task)
 
-    items = (
+    return (
         db.query(TaskHistory)
         .filter(TaskHistory.task_id == task_id)
         .order_by(TaskHistory.id.asc())
         .all()
     )
-
-    return [
-        {
-            "id": x.id,
-            "task_id": x.task_id,
-            "action": x.action,
-            "detail": x.detail,
-            "created_at": x.created_at,
-        }
-        for x in items
-    ]
 
 
 @app.post("/ai/suggest")
@@ -574,10 +483,27 @@ def ai_suggest(
     payload: AISuggestIn,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> dict:
     task = get_task_or_404(db, payload.task_id)
     require_task_access(current_user, task)
-    return build_ai_suggestion(task, current_user)
+
+    suggestions = [
+        "Rà soát lại mô tả công việc để cụ thể hóa đầu ra cần bàn giao.",
+        "Kiểm tra hạn hoàn thành và bổ sung mốc trung gian nếu công việc kéo dài.",
+        "Xác nhận người phụ trách và người giao việc để tránh chồng chéo.",
+    ]
+
+    if task.status == "todo":
+        summary = "AI gợi ý: Công việc đang ở trạng thái chưa thực hiện, nên làm rõ mục tiêu và kế hoạch triển khai."
+    elif task.status == "in_progress":
+        summary = "AI gợi ý: Công việc đang được triển khai, nên cập nhật tiến độ và các vướng mắc chính."
+    else:
+        summary = "AI gợi ý: Công việc đã hoàn thành, nên chuẩn hóa nội dung bàn giao và tổng kết kết quả."
+
+    return {
+        "summary": summary,
+        "suggestions": suggestions,
+    }
 
 
 @app.websocket("/ws/notifications")

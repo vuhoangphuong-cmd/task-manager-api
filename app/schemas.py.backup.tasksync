@@ -4,14 +4,6 @@ from typing import Literal, Optional
 from pydantic import BaseModel, EmailStr
 
 
-class AttachmentItem(BaseModel):
-    kind: Literal["link", "file"] = "link"
-    name: str
-    url: str
-    mime_type: str = ""
-    size: int = 0
-
-
 class RegisterIn(BaseModel):
     full_name: str
     email: EmailStr
@@ -31,7 +23,6 @@ class TaskCreate(BaseModel):
     priority: Literal["low", "medium", "high"] = "medium"
     due_date: Optional[str] = None
     status: Literal["todo", "in_progress", "done"] = "todo"
-    attachments: list[AttachmentItem] = []
 
 
 class TaskUpdate(BaseModel):
@@ -41,7 +32,6 @@ class TaskUpdate(BaseModel):
     priority: Literal["low", "medium", "high"] = "medium"
     due_date: Optional[str] = None
     status: Literal["todo", "in_progress", "done"] = "todo"
-    attachments: list[AttachmentItem] = []
 
 
 class StatusUpdate(BaseModel):
@@ -60,9 +50,10 @@ class TaskOut(BaseModel):
     priority: Literal["low", "medium", "high"]
     due_date: Optional[str] = None
     status: Literal["todo", "in_progress", "done"]
-    attachments: list[AttachmentItem] = []
     created_at: datetime
     updated_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class HistoryOut(BaseModel):
@@ -72,6 +63,8 @@ class HistoryOut(BaseModel):
     detail: str
     created_at: datetime
 
+    model_config = {"from_attributes": True}
+
 
 class UserOut(BaseModel):
     id: int
@@ -79,3 +72,11 @@ class UserOut(BaseModel):
     email: EmailStr
     role: Literal["truong_phong", "pho_truong_phong", "chuyen_vien"]
     is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: UserOut

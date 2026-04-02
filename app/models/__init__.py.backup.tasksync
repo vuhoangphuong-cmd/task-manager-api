@@ -29,7 +29,6 @@ class Task(Base):
     priority: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
     due_date: Mapped[str | None] = mapped_column(String(50), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="todo", nullable=False)
-    attachments_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
