@@ -206,39 +206,39 @@ def build_ai_suggestion(task: Task, current_user: User) -> dict:
     suggestions = []
 
     if priority == "high":
-        suggestions.append("Công việc ưu tiên cao: nên chia ngay thành các đầu việc nhỏ, cập nhật tiến độ từng mốc và đính kèm minh chứng theo từng bước.")
+        suggestions.append("Công việc đang có mức ưu tiên cao, nên tách ngay 2–3 đầu việc nhỏ và cập nhật tiến độ hàng ngày.")
     elif priority == "medium":
-        suggestions.append("Nên chia công việc thành các mốc ngắn theo tiến độ để lãnh đạo theo dõi và hỗ trợ kịp thời.")
+        suggestions.append("Nên chia công việc thành các mốc trung gian ngắn để tránh dồn việc vào sát hạn.")
     else:
-        suggestions.append("Có thể gom công việc này vào kế hoạch định kỳ, nhưng vẫn nên ghi rõ kết quả đầu ra để tránh bỏ sót.")
+        suggestions.append("Có thể gom công việc này vào một đợt xử lý định kỳ nếu chưa cần ưu tiên ngay.")
 
     if status_value == "todo":
-        suggestions.append("Bước tiếp theo phù hợp là xác định đầu ra cụ thể, tài liệu cần có và người phối hợp chính.")
+        suggestions.append("Bước tiếp theo nên là xác định rõ đầu ra, dữ liệu cần thu thập và người phối hợp chính.")
     elif status_value == "in_progress":
-        suggestions.append("Nên cập nhật phần đã làm, phần đang vướng và mốc hoàn thành dự kiến ngay trong phần mô tả báo cáo.")
+        suggestions.append("Nên cập nhật ngắn gọn phần đã làm, phần còn tồn đọng và trở ngại hiện tại ngay trong mô tả báo cáo.")
     else:
-        suggestions.append("Khi đã hoàn thành, nên bổ sung kết quả cuối, file minh chứng và nội dung bàn giao để chốt công việc.")
+        suggestions.append("Khi đã hoàn thành, nên bổ sung kết quả cuối cùng, tài liệu bàn giao và bằng chứng hoàn thành.")
 
     if due_date:
-        suggestions.append(f"Hạn hoàn thành hiện là {due_date}. Nên đối chiếu tiến độ thực tế với hạn này trước khi đổi trạng thái.")
+        suggestions.append(f"Hạn hoàn thành hiện đặt là {due_date}. Nên kiểm tra lại xem còn thiếu minh chứng nào trước khi chốt công việc.")
     else:
-        suggestions.append("Công việc chưa có hạn hoàn thành; nên bổ sung deadline nếu đây là đầu việc cần theo dõi sát.")
+        suggestions.append("Công việc chưa có hạn hoàn thành, nên bổ sung deadline để thuận tiện theo dõi và nhắc việc.")
 
     if title:
-        suggestions.append(f'Riêng với công việc "{title}", mô tả nên nêu rõ mục tiêu, sản phẩm đầu ra và đơn vị/người nhận kết quả.')
+        suggestions.append(f'Gợi ý cho riêng công việc "{title}": mô tả nên nêu rõ mục tiêu, kết quả đầu ra và người nhận bàn giao.')
     if description:
-        suggestions.append("Mô tả hiện đã có nội dung; nên làm rõ thêm bằng số liệu, file hoặc link minh chứng để báo cáo thuyết phục hơn.")
+        suggestions.append("Mô tả hiện đã có nội dung, nên thêm 1–2 dòng báo cáo kết quả hoặc vướng mắc để lãnh đạo theo dõi sát hơn.")
     else:
-        suggestions.append("Mô tả còn trống hoặc quá ngắn; nên cập nhật nội dung triển khai thực tế trước khi đổi trạng thái công việc.")
+        suggestions.append("Mô tả đang còn trống hoặc quá ngắn, nên bổ sung nội dung công việc và tình trạng triển khai thực tế.")
 
     if not is_leadership(current_user):
-        suggestions.append(f'Bạn đang là người thực hiện ({assignee}), nên tập trung viết báo cáo ngắn gọn, rõ kết quả và đính kèm đúng minh chứng.')
+        suggestions.append(f'Bạn đang là người được giao ({assignee}), nên ưu tiên cập nhật báo cáo thực hiện ngay trong phần mô tả trước khi đổi trạng thái.')
     else:
-        suggestions.append("Bạn đang ở vai trò lãnh đạo, nên kiểm tra tính đầy đủ của báo cáo, minh chứng và mức độ hoàn thành trước khi chốt.")
+        suggestions.append("Bạn đang ở vai trò lãnh đạo, nên kiểm tra tiến độ, minh chứng đính kèm và chất lượng báo cáo trước khi duyệt kết quả.")
 
     summary = (
         f'Công việc "{title}" hiện ở trạng thái "{status_value}", ưu tiên "{priority}". '
-        f'AI gợi ý tập trung theo đúng nội dung công việc, tiến độ hiện tại và vai trò của người đang thao tác.'
+        f'AI gợi ý tập trung vào việc cập nhật báo cáo đúng tiến độ, làm rõ đầu ra và đính kèm minh chứng phù hợp.'
     )
 
     return {
@@ -322,6 +322,31 @@ def login_email(payload: LoginEmailIn, db: Session = Depends(get_db)):
 @app.get("/auth/me", response_model=UserOut)
 def read_me(current_user: User = Depends(get_current_user)) -> UserOut:
     return current_user
+
+
+@app.get("/users")
+def list_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_leadership(current_user)
+
+    users = (
+        db.query(User)
+        .filter(User.is_active == True)
+        .order_by(User.full_name.asc(), User.email.asc())
+        .all()
+    )
+
+    return [
+        {
+            "id": u.id,
+            "full_name": u.full_name,
+            "email": u.email,
+            "role": u.role,
+        }
+        for u in users
+    ]
 
 
 @app.get("/tasks", response_model=List[TaskOut])
