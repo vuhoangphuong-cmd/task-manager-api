@@ -206,39 +206,39 @@ def build_ai_suggestion(task: Task, current_user: User) -> dict:
     suggestions = []
 
     if priority == "high":
-        suggestions.append("Công việc ưu tiên cao: nên chia ngay thành các đầu việc nhỏ, cập nhật tiến độ theo từng mốc và đính kèm minh chứng.")
+        suggestions.append("Công việc ưu tiên cao: nên chia ngay thành các đầu việc nhỏ, cập nhật tiến độ từng mốc và đính kèm minh chứng theo từng bước.")
     elif priority == "medium":
-        suggestions.append("Nên chia công việc thành các mốc ngắn để dễ báo cáo tiến độ và xin hỗ trợ khi cần.")
+        suggestions.append("Nên chia công việc thành các mốc ngắn theo tiến độ để lãnh đạo theo dõi và hỗ trợ kịp thời.")
     else:
-        suggestions.append("Có thể xử lý theo đợt nhưng vẫn nên mô tả rõ đầu ra để tránh bỏ sót nội dung quan trọng.")
+        suggestions.append("Có thể gom công việc này vào kế hoạch định kỳ, nhưng vẫn nên ghi rõ kết quả đầu ra để tránh bỏ sót.")
 
     if status_value == "todo":
-        suggestions.append("Bước phù hợp tiếp theo là xác định đầu ra cụ thể, tài liệu cần chuẩn bị và người phối hợp chính.")
+        suggestions.append("Bước tiếp theo phù hợp là xác định đầu ra cụ thể, tài liệu cần có và người phối hợp chính.")
     elif status_value == "in_progress":
-        suggestions.append("Nên cập nhật phần đã làm, phần còn vướng và mốc hoàn thành dự kiến ngay trong phần mô tả báo cáo.")
+        suggestions.append("Nên cập nhật phần đã làm, phần đang vướng và mốc hoàn thành dự kiến ngay trong phần mô tả báo cáo.")
     else:
-        suggestions.append("Khi đã hoàn thành, nên bổ sung kết quả cuối cùng, tài liệu minh chứng và nội dung bàn giao.")
+        suggestions.append("Khi đã hoàn thành, nên bổ sung kết quả cuối, file minh chứng và nội dung bàn giao để chốt công việc.")
 
     if due_date:
         suggestions.append(f"Hạn hoàn thành hiện là {due_date}. Nên đối chiếu tiến độ thực tế với hạn này trước khi đổi trạng thái.")
     else:
-        suggestions.append("Công việc chưa có hạn hoàn thành; nếu đây là đầu việc quan trọng, nên bổ sung deadline để tiện theo dõi.")
+        suggestions.append("Công việc chưa có hạn hoàn thành; nên bổ sung deadline nếu đây là đầu việc cần theo dõi sát.")
 
     if title:
-        suggestions.append(f'Riêng với công việc "{title}", phần mô tả nên nêu rõ mục tiêu, kết quả đầu ra và người nhận bàn giao.')
+        suggestions.append(f'Riêng với công việc "{title}", mô tả nên nêu rõ mục tiêu, sản phẩm đầu ra và đơn vị/người nhận kết quả.')
     if description:
-        suggestions.append("Mô tả hiện đã có nội dung; nên làm rõ thêm bằng số liệu, tệp hoặc link minh chứng để báo cáo thuyết phục hơn.")
+        suggestions.append("Mô tả hiện đã có nội dung; nên làm rõ thêm bằng số liệu, file hoặc link minh chứng để báo cáo thuyết phục hơn.")
     else:
-        suggestions.append("Mô tả còn ngắn hoặc trống; nên cập nhật báo cáo thực hiện trước khi đổi trạng thái công việc.")
+        suggestions.append("Mô tả còn trống hoặc quá ngắn; nên cập nhật nội dung triển khai thực tế trước khi đổi trạng thái công việc.")
 
     if not is_leadership(current_user):
-        suggestions.append(f'Bạn đang là người thực hiện ({assignee}), nên tập trung cập nhật báo cáo ngắn gọn, rõ kết quả và đính kèm minh chứng đúng trọng tâm.')
+        suggestions.append(f'Bạn đang là người thực hiện ({assignee}), nên tập trung viết báo cáo ngắn gọn, rõ kết quả và đính kèm đúng minh chứng.')
     else:
-        suggestions.append("Bạn đang ở vai trò lãnh đạo, nên rà soát mức độ hoàn thành, tính đầy đủ của báo cáo và chất lượng minh chứng đính kèm.")
+        suggestions.append("Bạn đang ở vai trò lãnh đạo, nên kiểm tra tính đầy đủ của báo cáo, minh chứng và mức độ hoàn thành trước khi chốt.")
 
     summary = (
         f'Công việc "{title}" hiện ở trạng thái "{status_value}", ưu tiên "{priority}". '
-        f'AI gợi ý tập trung theo đúng nội dung công việc và vai trò của người đang thao tác.'
+        f'AI gợi ý tập trung theo đúng nội dung công việc, tiến độ hiện tại và vai trò của người đang thao tác.'
     )
 
     return {

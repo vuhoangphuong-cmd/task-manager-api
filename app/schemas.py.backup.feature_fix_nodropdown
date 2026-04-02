@@ -1,0 +1,81 @@
+from datetime import datetime
+from typing import Literal, Optional
+
+from pydantic import BaseModel, EmailStr
+
+
+class AttachmentItem(BaseModel):
+    kind: Literal["link", "file"] = "link"
+    name: str
+    url: str
+    mime_type: str = ""
+    size: int = 0
+
+
+class RegisterIn(BaseModel):
+    full_name: str
+    email: EmailStr
+    role: Literal["truong_phong", "pho_truong_phong", "chuyen_vien"]
+    password: str
+
+
+class LoginEmailIn(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class TaskCreate(BaseModel):
+    title: str
+    description: str = ""
+    assignee: str = ""
+    priority: Literal["low", "medium", "high"] = "medium"
+    due_date: Optional[str] = None
+    status: Literal["todo", "in_progress", "done"] = "todo"
+    attachments: list[AttachmentItem] = []
+
+
+class TaskUpdate(BaseModel):
+    title: str
+    description: str = ""
+    assignee: str = ""
+    priority: Literal["low", "medium", "high"] = "medium"
+    due_date: Optional[str] = None
+    status: Literal["todo", "in_progress", "done"] = "todo"
+    attachments: list[AttachmentItem] = []
+
+
+class StatusUpdate(BaseModel):
+    status: Literal["todo", "in_progress", "done"]
+
+
+class AISuggestIn(BaseModel):
+    task_id: int
+
+
+class TaskOut(BaseModel):
+    id: int
+    title: str
+    description: str
+    assignee: str
+    priority: Literal["low", "medium", "high"]
+    due_date: Optional[str] = None
+    status: Literal["todo", "in_progress", "done"]
+    attachments: list[AttachmentItem] = []
+    created_at: datetime
+    updated_at: datetime
+
+
+class HistoryOut(BaseModel):
+    id: int
+    task_id: int
+    action: str
+    detail: str
+    created_at: datetime
+
+
+class UserOut(BaseModel):
+    id: int
+    full_name: str
+    email: EmailStr
+    role: Literal["truong_phong", "pho_truong_phong", "chuyen_vien"]
+    is_active: bool
