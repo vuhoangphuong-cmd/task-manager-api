@@ -50,7 +50,7 @@ def task_to_dict(task: Task) -> dict:
         "priority": task.priority,
         "due_date": task.due_date,
         "status": task.status,
-        "attachments": safe_json_loads(task.attachments_json),
+        "attachments": safe_json_loads(getattr(task, "attachments_json", "[]")),
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }
@@ -152,6 +152,7 @@ def is_leadership(user: User) -> bool:
 
 def build_user_assignee_candidates(user: User) -> list[str]:
     candidates = []
+
     for value in [
         getattr(user, "email", None),
         getattr(user, "full_name", None),
@@ -161,6 +162,7 @@ def build_user_assignee_candidates(user: User) -> list[str]:
             v = value.strip()
             if v and v not in candidates:
                 candidates.append(v)
+
     return candidates
 
 
@@ -200,49 +202,37 @@ def build_ai_suggestion(task: Task, current_user: User) -> dict:
     description = (task.description or "").strip()
     priority = (task.priority or "").strip()
     status_value = (task.status or "").strip()
-    due_date = (task.due_date or "").strip()
-    assignee = (task.assignee or "").strip()
 
     suggestions = []
 
     if priority == "high":
-        suggestions.append("Công việc ưu tiên cao: nên chia ngay thành các đầu việc nhỏ, cập nhật tiến độ theo từng mốc và đính kèm minh chứng.")
+        suggestions.append("Công việc ưu tiên cao, nên tách rõ các đầu việc nhỏ và cập nhật tiến độ thường xuyên.")
     elif priority == "medium":
-        suggestions.append("Nên chia công việc thành các mốc ngắn để dễ báo cáo tiến độ và xin hỗ trợ khi cần.")
+        suggestions.append("Nên chia công việc thành các mốc ngắn để dễ theo dõi và báo cáo.")
     else:
-        suggestions.append("Có thể xử lý theo đợt nhưng vẫn nên mô tả rõ đầu ra để tránh bỏ sót nội dung quan trọng.")
+        suggestions.append("Có thể xử lý theo đợt, nhưng vẫn nên ghi rõ đầu ra cần bàn giao.")
 
     if status_value == "todo":
-        suggestions.append("Bước phù hợp tiếp theo là xác định đầu ra cụ thể, tài liệu cần chuẩn bị và người phối hợp chính.")
+        suggestions.append("Bước tiếp theo nên là làm rõ nội dung triển khai và kết quả cần đạt.")
     elif status_value == "in_progress":
-        suggestions.append("Nên cập nhật phần đã làm, phần còn vướng và mốc hoàn thành dự kiến ngay trong phần mô tả báo cáo.")
+        suggestions.append("Nên cập nhật phần đã làm, phần còn vướng và mốc hoàn thành dự kiến.")
     else:
-        suggestions.append("Khi đã hoàn thành, nên bổ sung kết quả cuối cùng, tài liệu minh chứng và nội dung bàn giao.")
-
-    if due_date:
-        suggestions.append(f"Hạn hoàn thành hiện là {due_date}. Nên đối chiếu tiến độ thực tế với hạn này trước khi đổi trạng thái.")
-    else:
-        suggestions.append("Công việc chưa có hạn hoàn thành; nếu đây là đầu việc quan trọng, nên bổ sung deadline để tiện theo dõi.")
+        suggestions.append("Khi đã hoàn thành, nên kiểm tra lại mô tả báo cáo và minh chứng đính kèm.")
 
     if title:
-        suggestions.append(f'Riêng với công việc "{title}", phần mô tả nên nêu rõ mục tiêu, kết quả đầu ra và người nhận bàn giao.')
+        suggestions.append(f'Riêng với công việc "{title}", nên làm rõ sản phẩm đầu ra và phạm vi bàn giao.')
     if description:
-        suggestions.append("Mô tả hiện đã có nội dung; nên làm rõ thêm bằng số liệu, tệp hoặc link minh chứng để báo cáo thuyết phục hơn.")
+        suggestions.append("Mô tả hiện đã có nội dung, nên làm rõ thêm bằng số liệu hoặc kết quả cụ thể.")
     else:
-        suggestions.append("Mô tả còn ngắn hoặc trống; nên cập nhật báo cáo thực hiện trước khi đổi trạng thái công việc.")
+        suggestions.append("Mô tả còn ngắn hoặc trống, nên cập nhật báo cáo thực hiện trước khi đổi trạng thái.")
 
-    if not is_leadership(current_user):
-        suggestions.append(f'Bạn đang là người thực hiện ({assignee}), nên tập trung cập nhật báo cáo ngắn gọn, rõ kết quả và đính kèm minh chứng đúng trọng tâm.')
+    if is_leadership(current_user):
+        suggestions.append("Bạn đang ở vai trò lãnh đạo, nên rà soát tính đầy đủ của báo cáo và mức độ hoàn thành.")
     else:
-        suggestions.append("Bạn đang ở vai trò lãnh đạo, nên rà soát mức độ hoàn thành, tính đầy đủ của báo cáo và chất lượng minh chứng đính kèm.")
-
-    summary = (
-        f'Công việc "{title}" hiện ở trạng thái "{status_value}", ưu tiên "{priority}". '
-        f'AI gợi ý tập trung theo đúng nội dung công việc và vai trò của người đang thao tác.'
-    )
+        suggestions.append("Bạn đang là người thực hiện, nên tập trung cập nhật kết quả thực tế và khó khăn hiện tại.")
 
     return {
-        "summary": summary,
+        "summary": f'Công việc "{title}" hiện ở trạng thái "{status_value}", ưu tiên "{priority}".',
         "suggestions": suggestions[:6],
     }
 
@@ -389,6 +379,7 @@ async def create_task(
             "type": "task_created",
             "task_id": task.id,
             "title": task.title,
+            "status": task.status,
             "timestamp": now_utc().isoformat(timespec="seconds"),
         }
     )
