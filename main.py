@@ -408,9 +408,6 @@ async def update_task(
     task = get_task_or_404(db, task_id)
     require_task_access(current_user, task)
 
-    old_status = task.status
-    old_description = task.description
-
     task.title = payload.title
     task.description = payload.description
     task.priority = payload.priority
@@ -427,21 +424,11 @@ async def update_task(
     db.commit()
     db.refresh(task)
 
-    changes = []
-
-    if old_status != payload.status:
-        changes.append(f"Trạng thái: {old_status} → {payload.status}")
-
-    if old_description != payload.description:
-        changes.append("Cập nhật nội dung báo cáo")
-
-    detail_text = "; ".join(changes) if changes else "Cập nhật công việc"
-
     add_history(
         db,
         task_id,
-        f"Cập nhật bởi {current_user.full_name}",
-        detail_text,
+        "Cập nhật công việc",
+        f'Cập nhật công việc "{task.title}" - trạng thái mới: {task.status}',
     )
 
     await manager.broadcast_json(
@@ -455,6 +442,7 @@ async def update_task(
     )
 
     return task_to_dict(task)
+
 
 @app.patch("/tasks/{task_id}/status", response_model=TaskOut)
 async def update_task_status(
